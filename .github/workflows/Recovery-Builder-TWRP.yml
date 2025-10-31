@@ -53,6 +53,30 @@ jobs:
     permissions:
       contents: write
     steps:
+
+    # ----------------------------------------------------
+    #  ENHANCEMENT: Initial Aggressive Cleanup & Check
+    # ----------------------------------------------------
+    - name: 🧹 Pre-Build Aggressive Disk Cleanup & Check
+      run: |
+        echo "--- Initial Disk Usage ---"
+        df -h
+        
+        # Aggressively remove unnecessary SDKs and toolchains to free space
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/share/swift
+        sudo rm -rf /usr/local/.ghcup
+        
+        echo "--- Disk Usage After Aggressive Cleanup ---"
+        df -h
+        
+    - name: Set Swap Space
+      uses: pierotofy/set-swap-space@master
+      with:
+        swap-size-gb: 24
+        
     - name: Check Out
       uses: actions/checkout@v4
       
@@ -65,16 +89,12 @@ jobs:
         echo "Device Path: ${{ inputs.DEVICE_PATH }}"
         echo "Device Name: ${{ inputs.DEVICE_NAME }}"
         echo "Build Target: ${{ inputs.BUILD_TARGET }}image"
-
-    - name: Cleanup
+        
+    # NOTE: The 'slimhub_actions' action is kept, but it is less aggressive
+    # than the manual cleanup added above, which is crucial for large builds.
+    - name: Cleanup (Slimhub Action)
       uses: rokibhasansagar/slimhub_actions@main
       
-    - name: Set Swap Space
-      uses: pierotofy/set-swap-space@master
-      with:
-        swap-size-gb: 24
-        
-
     - name: Prepare the environment
       run: |
         sudo apt update && sudo apt upgrade -y
@@ -107,13 +127,29 @@ jobs:
         if_true: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git
         if_false: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git
 
+    # ----------------------------------------------------
+    #  ENHANCEMENT: Add Repo Cache
+    # ----------------------------------------------------
+    - name: Cache Repo Sources
+      uses: actions/cache@v4
+      with:
+        path: /home/runner/work/android-recovery # The directory where repo sync downloads files
+        key: ${{ runner.os }}-repo-sync-${{ inputs.MANIFEST_BRANCH }}
+        restore-keys: |
+          ${{ runner.os }}-repo-sync-
+
     - name: Initialize Repo
       run: |
         mkdir android-recovery
         cd android-recovery
         git config --global user.name "${{ github.actor }}"
         git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
-        repo init --depth=1 -u ${{ steps.manifest.outputs.value }} -b ${{ inputs.MANIFEST_BRANCH }}
+         # Check if the directory is already populated from cache
+          if [ ! -d ".repo" ]; then
+            repo init --depth=1 -u ${{ steps.manifest.outputs.value }} -b ${{ inputs.MANIFEST_BRANCH }}
+          else
+            echo "Repo already initialized from cache."
+          fi
         
     - name: Repo Sync
       run: |
@@ -139,18 +175,42 @@ jobs:
         fi
       continue-on-error: true
 
+    # ----------------------------------------------------
+    #  ENHANCEMENT: Add CCACHE and Monitor Before Build
+    # ----------------------------------------------------
+    - name: Check Disk Usage Before Build
+      run: |
+        echo "--- Disk Usage Before Build Step ---"
+        df -h
+        echo "--- android-recovery folder size ---"
+        du -sh android-recovery
+
     - name: Building Image 
       run: |
         cd android-recovery
+        # Set up CCACHE environment for faster subsequent builds (also helps manage build artifacts)
+        export CCACHE_DIR=${{ github.workspace }}/.ccache
+        ccache -M 50G # Set ccache size limit (adjust as needed)
+        
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         lunch ${{ env.DEVICE_MAKEFILE }}-eng && make clean && make ${{ inputs.BUILD_TARGET }}image -j$(nproc --all)
         echo "Done building your ${{ inputs.BUILD_TARGET }}.img"
+
+    - name: Cache Ccache
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/.ccache
+        key: ${{ runner.os }}-ccache-${{ inputs.MANIFEST_BRANCH }}-${{ inputs.DEVICE_NAME }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
       
     - name: Set Other Build Properties # Output will be use in Release
       run: |
         echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
         echo "VENDOR=$(echo "${{ inputs.DEVICE_PATH }}" | cut -d'/' -f2)" >> $GITHUB_ENV
+    
+    # ... (Remaining steps for Compressing TWRP Build, Upload to Release, and Run LDCheck are unchanged) ...
 
     - name: Compressing TWRP Build (if Samsung)...
       if: env.VENDOR == 'samsung'
@@ -201,3 +261,28 @@ jobs:
         python3 ldcheck -p system/lib64:vendor/lib64:system/lib:vendor/lib -d ${{ inputs.LDCHECK }}
         echo "Done checking missing dependencies. Review, and reconfigure your tree."
       continue-on-error: true
+
+    # ----------------------------------------------------
+    #  CRITICAL FIX: Post-Job Cleanup
+    # ----------------------------------------------------
+    - name: 🗑️ Final Disk Space Cleanup
+      # Ensure this runs ALWAYS, even if the build or upload fails, to prevent the disk from filling up for the next run.
+      if: always() 
+      run: |
+        echo "--- Final Disk Usage BEFORE aggressive cleanup ---"
+        df -h
+        
+        # 1. Clean the main workspace directory (where 'android-recovery' is located)
+        echo "Removing android-recovery source code and out directory..."
+        sudo rm -rf android-recovery
+        
+        # 2. Prune Docker (This is often a massive space hog on runners)
+        echo "Pruning Docker system..."
+        sudo docker system prune -a --force
+        
+        # 3. Clean up the runner's workspace cache (_work directory)
+        echo "Cleaning up runner's work directory..."
+        sudo rm -rf /home/runner/actions-runner/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/
+        
+        echo "--- Final Disk Usage AFTER aggressive cleanup ---"
+        df -h
