@@ -208,8 +208,7 @@ jobs:
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
                 
-        export TARGET_RELEASE=trunk_staging
-        lunch ${{ env.DEVICE_MAKEFILE }}-eng
+        lunch ${{ env.DEVICE_MAKEFILE }}-trunk_staging-eng
         make clean
         make ${{ inputs.BUILD_TARGET }}image -j$(nproc --all)
         
