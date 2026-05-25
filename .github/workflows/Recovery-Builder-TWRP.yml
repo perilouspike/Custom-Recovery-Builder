@@ -191,15 +191,27 @@ jobs:
         du -sh android-recovery
 
     - name: Building Image 
+      shell: bash   # <--- CRITICAL: Forces GitHub to use Bash features
       run: |
         cd android-recovery
-        # Set up CCACHE environment for faster subsequent builds (also helps manage build artifacts)
-        export CCACHE_DIR=${{ github.workspace }}/.ccache
-        ccache -M 50G # Set ccache size limit (adjust as needed)
         
+        # 1. Bypass the asuite script error for minimal TWRP manifests
+        mkdir -p tools/asuite
+        touch tools/asuite/asuite.sh
+        chmod a+x tools/asuite/asuite.sh
+        
+        # 2. Set up CCACHE environment 
+        export CCACHE_DIR=${{ github.workspace }}/.ccache
+        ccache -M 50G
+        
+        # 3. Initialize and build
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
-        lunch ${{ env.DEVICE_MAKEFILE }}-eng && make clean && make ${{ inputs.BUILD_TARGET }}image -j$(nproc --all)
+        
+        lunch ${{ env.DEVICE_MAKEFILE }}-eng
+        make clean
+        make ${{ inputs.BUILD_TARGET }}image -j$(nproc --all)
+        
         echo "Done building your ${{ inputs.BUILD_TARGET }}.img"
 
     - name: Cache Ccache
