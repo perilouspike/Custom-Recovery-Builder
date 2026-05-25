@@ -191,27 +191,29 @@ jobs:
         du -sh android-recovery
 
     - name: Building Image 
-      shell: bash   # <--- CRITICAL: Forces GitHub to use Bash features
+      shell: bash
       run: |
         cd android-recovery
         
-        # 1. Bypass the asuite script error for minimal TWRP manifests
-        mkdir -p tools/asuite
-        touch tools/asuite/asuite.sh
-        chmod a+x tools/asuite/asuite.sh
-        
-        # 2. Set up CCACHE environment 
+        # Set up CCACHE environment
         export CCACHE_DIR=${{ github.workspace }}/.ccache
         ccache -M 50G
         
-        # 3. Initialize and build
+        # Source environment rules
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
-                
-        lunch ${{ env.DEVICE_MAKEFILE }}-trunk_staging-eng
+        
+        # BYPASS LUNCH COMPLETELY: Set AOSP system variables directly
+        export TARGET_PRODUCT=twrp_ossi
+        export TARGET_RELEASE=trunk_staging
+        export TARGET_BUILD_VARIANT=eng
+        
+        # Initialize the build configuration system manually using the variables
+        set_stuff_for_environment
+        
+        # Compile targets
         make clean
         make ${{ inputs.BUILD_TARGET }}image -j$(nproc --all)
-        
         echo "Done building your ${{ inputs.BUILD_TARGET }}.img"
 
     - name: Cache Ccache
