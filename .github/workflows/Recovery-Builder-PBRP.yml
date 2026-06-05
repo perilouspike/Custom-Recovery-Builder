@@ -6,27 +6,28 @@ on:
       MANIFEST_BRANCH:
         description: 'Manifest Branch'
         required: true
-        default: ''
+        default: 'android-12.1'
         type: choice
         options:
+        - android-14.0
         - android-12.1
         - android-11.0
       DEVICE_TREE:
         description: 'Custom Recovery Tree' # Your already made Device Tree for TWRP
         required: true
-        default: 'https://github.com/cd-Crypton/custom_recovery_tree_asus_AI2201.git'
+        default: 'https://github.com/perilouspike/android_device_oppo_a38.git'
       DEVICE_TREE_BRANCH:
         description: 'Custom Recovery Tree Branch' # Your Device Tree Branch, make sure it's right.
         required: true
-        default: 'Android-12'
+        default: ''
       DEVICE_PATH:
         description: 'Specify your Device Path' # As is, just like your DEVICE_PATH in your BoardConfig.mk
         required: true
-        default: 'device/asus/AI2201'
+        default: 'device/Oppo/A38'
       DEVICE_NAME:
         description: 'Specify your Device Codename' # As is, just like your PRODUCT_DEVICE in your device tree.
         required: true
-        default: 'AI2201'
+        default: 'A38'
       BUILD_TARGET:
         description: 'Specify your Build Target' # Pick among boot, recovery and vendor_boot
         required: true
@@ -81,7 +82,7 @@ jobs:
             libc6-dev lib32ncurses-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils \
             xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses-dev libsdl1.2-dev \
             build-essential libgtk-3-dev libglu1-mesa-dev freeglut3-dev git libxml2 lzop pngcrush schedtool squashfs-tools \
-            imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses6 python3 tar
+            imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses6 python3 tar libssl-dev
 
     - name: Install OpenJDK
       uses: actions/setup-java@v4
@@ -121,6 +122,8 @@ jobs:
         cd android-recovery
         if [ -f ${{ inputs.DEVICE_PATH }}/twrp_${{ inputs.DEVICE_NAME}}.mk ]; then
             echo "DEVICE_MAKEFILE=twrp_${{ inputs.DEVICE_NAME }}" >> $GITHUB_ENV
+        elif [ -f ${{ inputs.DEVICE_PATH }}/pb_${{ inputs.DEVICE_NAME}}.mk ]; then
+            echo "DEVICE_MAKEFILE=pb_${{ inputs.DEVICE_NAME }}" >> $GITHUB_ENV
         elif [ -f ${{ inputs.DEVICE_PATH }}/omni_${{ inputs.DEVICE_NAME}}.mk ]; then
             echo "DEVICE_MAKEFILE=omni_${{ inputs.DEVICE_NAME }}" >> $GITHUB_ENV
         else
@@ -131,6 +134,7 @@ jobs:
     - name: Fixed Missing Fonts
       run: |
         cd android-recovery
+        mkdir -p external/noto-fonts/other
         cd external/noto-fonts/other
         wget https://github.com/cd-Crypton/custom-recovery-extras/raw/main/missing-font.zip
         unzip -o missing-font.zip
@@ -140,7 +144,7 @@ jobs:
         cd android-recovery
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
-        lunch ${{ env.DEVICE_MAKEFILE }}-eng && mka pbrp
+        lunch ${{ env.DEVICE_MAKEFILE }}-eng && mka bootimage
       
     - name: Set Build Date # Output will be use in Release
       run: |
