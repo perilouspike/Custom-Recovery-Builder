@@ -144,7 +144,7 @@ jobs:
         cd android-recovery
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
-        lunch ${{ env.DEVICE_MAKEFILE }}-eng && mka bootimage
+        lunch ${{ env.DEVICE_MAKEFILE }}-eng && mka pbrp
       
     - name: Set Build Date # Output will be use in Release
       run: |
